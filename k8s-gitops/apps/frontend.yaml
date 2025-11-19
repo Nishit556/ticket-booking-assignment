@@ -16,7 +16,7 @@ spec:
       containers:
       - name: frontend
         # REPLACE WITH YOUR AWS ACCOUNT ID LATER
-        image: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ticket-booking/frontend:latest
+        image: YOUR_AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/ticket-booking/frontend:latest
         ports:
         - containerPort: 3000
 ---
