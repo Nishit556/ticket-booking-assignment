@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-service
+spec:
+  selector:
+    matchLabels:
+      app: booking-service
+  template:
+    metadata:
+      labels:
+        app: booking-service
+    spec:
+      containers:
+      - name: booking-service
+        image: YOUR_AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/ticket-booking/booking-service:latest
+        ports:
+        - containerPort: 5000
+        env:
+        # Connects to the MSK Cluster we built in Terraform
+        - name: KAFKA_BROKERS
+          value: "b-1.ticket-booking-kafka.xxxxxx.c3.kafka.us-east-1.amazonaws.com:9092"
+        resources:
+          limits:
+            cpu: "500m"
+          requests:
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-service
+spec:
+  selector:
+    app: booking-service
+  ports:
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000
+---
+# REQUIREMENT: HPA (Horizontal Pod Autoscaler)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: booking-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: booking-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50

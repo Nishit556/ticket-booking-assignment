@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-catalog
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: event-catalog
+  template:
+    metadata:
+      labels:
+        app: event-catalog
+    spec:
+      containers:
+      - name: event-catalog
+        image: YOUR_AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/ticket-booking/event-catalog:latest
+        ports:
+        - containerPort: 5000
+        env:
+        # We will get this Hostname from Terraform Outputs later
+        - name: DB_HOST
+          value: "ticketdb.xxxxxx.us-east-1.rds.amazonaws.com"
+        - name: DB_PASSWORD
+          value: "CHANGE_ME_PASSWORD" # In production, use K8s Secrets!
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-catalog
+spec:
+  selector:
+    app: event-catalog
+  ports:
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000
