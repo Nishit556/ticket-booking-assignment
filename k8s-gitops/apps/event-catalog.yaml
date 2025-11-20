@@ -20,7 +20,7 @@ spec:
         env:
         # We will get this Hostname from Terraform Outputs later
         - name: DB_HOST
-          value: "terraform-20251119101458319700000002.cov0iwq0wygo.us-east-1.rds.amazonaws.com"
+          value: "terraform-20251120151945012200000013.cov0iwq0wygo.us-east-1.rds.amazonaws.com"
         - name: DB_PASSWORD
           value: "CHANGE_ME_PASSWORD" # In production, use K8s Secrets!
 ---

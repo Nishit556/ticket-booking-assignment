@@ -19,7 +19,7 @@ spec:
         env:
         # Connects to the MSK Cluster we built in Terraform
         - name: KAFKA_BROKERS
-          value: "b-1.ticketbookingkafka.mkr8hh.c8.kafka.us-east-1.amazonaws.com:9092,b-2.ticketbookingkafka.mkr8hh.c8.kafka.us-east-1.amazonaws.com:9092"
+          value: "b-1.ticketbookingkafka.u5orzl.c8.kafka.us-east-1.amazonaws.com:9092,b-2.ticketbookingkafka.u5orzl.c8.kafka.us-east-1.amazonaws.com:9092"
         resources:
           limits:
             cpu: "500m"
