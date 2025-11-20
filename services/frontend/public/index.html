@@ -29,15 +29,43 @@
     </div>
 
     <div class="card">
-        <h2>3. Generate Ticket (Lambda Trigger)</h2>
+        <h2>3. Booking History</h2>
+        <p>Each booking attempt will show up here with a timestamp.</p>
+        <div id="bookingHistory" style="max-height: 200px; overflow-y: auto;"></div>
+    </div>
+
+    <div class="card">
+        <h2>4. Generate Ticket (Lambda Trigger)</h2>
         <p>Upload ID Proof to generate ticket:</p>
         <input type="file" id="idProof">
         <button class="btn" onclick="uploadFile()">Upload & Generate</button>
+        <button class="btn" style="margin-left:10px;background-color:#28a745" onclick="demoUpload()">Demo Ticket</button>
         <p id="uploadResult"></p>
+    </div>
+
+    <div class="card">
+        <h2>5. Latest Tickets</h2>
+        <button class="btn" onclick="refreshTickets()">Refresh Tickets</button>
+        <ul id="ticketsList"></ul>
+    </div>
+
+    <div class="card">
+        <h2>6. Service Status</h2>
+        <button class="btn" onclick="refreshStatus()">Refresh Status</button>
+        <div id="statusPanel"></div>
     </div>
 
     <script>
         let currentUserId = null; // Store logged in user
+        let bookingCounter = 0;
+
+        window.addEventListener('load', () => {
+            loadEvents();
+            refreshTickets();
+            refreshStatus();
+            setInterval(refreshTickets, 10000);
+            setInterval(refreshStatus, 10000);
+        });
 
         // 1. Register User
         async function registerUser() {
@@ -101,8 +129,14 @@
                     })
                 });
                 const data = await res.json();
-                alert(res.ok ? `✅ Success: ${data.message}` : `❌ Error: ${data.error}`);
-            } catch (e) { alert('Booking failed'); }
+                if (res.ok) {
+                    addBookingRow({ eventId, message: data.message, error: false });
+                } else {
+                    addBookingRow({ eventId, message: data.error, error: true });
+                }
+            } catch (e) {
+                addBookingRow({ eventId, message: 'Network error', error: true });
+            }
         }
 
         // 4. Upload File
@@ -118,7 +152,72 @@
                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
                 const data = await res.json();
                 document.getElementById('uploadResult').innerText = data.message || "Upload Failed";
-            } catch (e) { alert('Upload failed'); }
+                refreshTickets();
+            } catch (e) { document.getElementById('uploadResult').innerText = 'Upload failed'; }
+        }
+
+        async function demoUpload() {
+            document.getElementById('uploadResult').innerText = "Triggering demo upload...";
+            try {
+                const res = await fetch('/api/demo-upload', { method: 'POST' });
+                const data = await res.json();
+                document.getElementById('uploadResult').innerText = data.message || data.error;
+                refreshTickets();
+            } catch (e) {
+                document.getElementById('uploadResult').innerText = 'Demo upload failed';
+            }
+        }
+
+        function addBookingRow({ eventId, message, error }) {
+            bookingCounter += 1;
+            const container = document.getElementById('bookingHistory');
+            const row = document.createElement('div');
+            row.style.borderBottom = '1px solid #eee';
+            row.style.padding = '6px 0';
+            row.innerHTML = `
+                <strong>#${bookingCounter}</strong> Event ${eventId} -
+                <span style="color:${error ? 'red' : 'green'}">${message}</span>
+                <small style="color:#555;display:block">${new Date().toLocaleTimeString()}</small>
+            `;
+            container.prepend(row);
+        }
+
+        async function refreshTickets() {
+            try {
+                const res = await fetch('/api/tickets');
+                const tickets = await res.json();
+                const list = document.getElementById('ticketsList');
+                list.innerHTML = '';
+                if (tickets.length === 0) {
+                    list.innerHTML = '<li>No tickets generated yet.</li>';
+                    return;
+                }
+                tickets.forEach(t => {
+                    const li = document.createElement('li');
+                    li.textContent = `${t.key} (${new Date(t.lastModified).toLocaleString()})`;
+                    list.appendChild(li);
+                });
+            } catch (e) {
+                document.getElementById('ticketsList').innerHTML = '<li>Unable to load tickets.</li>';
+            }
+        }
+
+        async function refreshStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const statuses = await res.json();
+                const panel = document.getElementById('statusPanel');
+                panel.innerHTML = statuses.map(s => `
+                    <p>
+                        <strong>${s.name.toUpperCase()}:</strong>
+                        <span style="color:${s.ok ? 'green' : 'red'}">
+                            ${s.ok ? 'Healthy' : s.error}
+                        </span>
+                    </p>
+                `).join('');
+            } catch (e) {
+                document.getElementById('statusPanel').innerText = 'Unable to load status.';
+            }
         }
     </script>
 </body>

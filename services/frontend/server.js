@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const multer = require('multer');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const path = require('path');
 const fs = require('fs');
 
@@ -20,7 +20,8 @@ const USER_SERVICE_URL = process.env.USER_SERVICE_URL || 'http://user-service:30
 // S3 Configuration (For Ticket Generator)
 // We pick up credentials automatically from the EKS Node Role
 const s3Client = new S3Client({ region: "us-east-1" });
-const BUCKET_NAME = "ticket-booking-raw-data-YOUR_ID_HERE"; // <--- WE WILL FIX THIS LATER AUTOMATICALLY
+const BUCKET_NAME = "ticket-booking-raw-data-1f8db074";
+const DEMO_FILE_PATH = path.join(__dirname, '..', '..', 'id_proof.txt');
 
 // --- API ROUTES ---
 
@@ -82,6 +83,69 @@ app.post('/api/upload', upload.single('id_proof'), async (req, res) => {
     console.error("S3 Upload Error:", error);
     res.status(500).send("Upload failed.");
   }
+});
+
+// 5. List Generated Tickets (from Lambda)
+app.get('/api/tickets', async (_req, res) => {
+  try {
+    const command = new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      Prefix: 'tickets/'
+    });
+    const data = await s3Client.send(command);
+    const items = (data.Contents || [])
+      .filter(obj => obj.Key && obj.Key !== 'tickets/')
+      .sort((a, b) => new Date(b.LastModified) - new Date(a.LastModified))
+      .map(obj => ({
+        key: obj.Key,
+        lastModified: obj.LastModified
+      }));
+    res.json(items);
+  } catch (error) {
+    console.error("Ticket list error:", error);
+    res.status(500).json({ error: "Unable to list tickets" });
+  }
+});
+
+// 6. Demo Upload helper (uses bundled sample file)
+app.post('/api/demo-upload', async (_req, res) => {
+  try {
+    if (!fs.existsSync(DEMO_FILE_PATH)) {
+      return res.status(500).json({ error: "Demo file not found on server" });
+    }
+    const fileContent = fs.readFileSync(DEMO_FILE_PATH);
+    const key = `uploads/demo_${Date.now()}.txt`;
+    const command = new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Body: fileContent
+    });
+    await s3Client.send(command);
+    res.json({ message: "Demo file uploaded. Ticket generation in progress." });
+  } catch (error) {
+    console.error("Demo upload error:", error);
+    res.status(500).json({ error: "Demo upload failed" });
+  }
+});
+
+// 7. Aggregate service status
+app.get('/api/status', async (_req, res) => {
+  const services = [
+    { name: 'booking', url: `${BOOKING_SERVICE_URL}/health` },
+    { name: 'event', url: `${EVENT_SERVICE_URL}/health` },
+    { name: 'user', url: `${USER_SERVICE_URL}/health` }
+  ];
+
+  const results = await Promise.all(services.map(async svc => {
+    try {
+      const response = await axios.get(svc.url, { timeout: 2000 });
+      return { name: svc.name, ok: true, data: response.data };
+    } catch (error) {
+      return { name: svc.name, ok: false, error: error.message };
+    }
+  }));
+
+  res.json(results);
 });
 
 app.get('/health', (req, res) => res.send('OK'));
