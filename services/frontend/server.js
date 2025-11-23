@@ -4,12 +4,41 @@ const multer = require('multer');
 const { S3Client, PutObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const path = require('path');
 const fs = require('fs');
+const promClient = require('prom-client');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' }); // Temp storage for uploads
 
 app.use(express.static('public'));
 app.use(express.json());
+
+// Initialize Prometheus Metrics
+const register = new promClient.Registry();
+promClient.collectDefaultMetrics({ register });
+
+// Custom metrics
+const httpRequestDuration = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status_code'],
+  registers: [register]
+});
+
+// Middleware to track request duration
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    httpRequestDuration.labels(req.method, req.route?.path || req.path, res.statusCode).observe(duration);
+  });
+  next();
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
 
 // --- CONFIGURATION (Internal K8s DNS) ---
 // These addresses ONLY work inside the cluster, which is why this Node server must do the calling.
@@ -20,7 +49,7 @@ const USER_SERVICE_URL = process.env.USER_SERVICE_URL || 'http://user-service:30
 // S3 Configuration (For Ticket Generator)
 // We pick up credentials automatically from the EKS Node Role
 const s3Client = new S3Client({ region: "us-east-1" });
-const BUCKET_NAME = "ticket-booking-raw-data-1f8db074";
+const BUCKET_NAME = "ticket-booking-raw-data-0d78d5e3";
 const DEMO_FILE_PATH = path.join(__dirname, '..', '..', 'id_proof.txt');
 
 // --- API ROUTES ---
