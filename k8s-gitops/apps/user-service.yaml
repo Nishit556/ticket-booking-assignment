@@ -22,19 +22,22 @@ spec:
           value: "us-east-1"
         resources:
           limits:
-            cpu: "500m"
-          requests:
             cpu: "200m"
+          requests:
+            cpu: "50m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: user-service
+  labels:
+    app: user-service
 spec:
   selector:
     app: user-service
   ports:
-  - protocol: TCP
+  - name: http
+    protocol: TCP
     port: 3000
     targetPort: 3000
 ---
@@ -56,4 +59,4 @@ spec:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 50
+        averageUtilization: 7

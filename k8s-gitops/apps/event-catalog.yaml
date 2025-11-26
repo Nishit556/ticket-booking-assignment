@@ -20,18 +20,21 @@ spec:
         env:
         # We will get this Hostname from Terraform Outputs later
         - name: DB_HOST
-          value: "terraform-20251120151945012200000013.cov0iwq0wygo.us-east-1.rds.amazonaws.com"
+          value: "terraform-20251126034838499800000014.cov0iwq0wygo.us-east-1.rds.amazonaws.com"
         - name: DB_PASSWORD
-          value: "CHANGE_ME_PASSWORD" # In production, use K8s Secrets!
+          value: "CHANGE_ME_PASSWORD" 
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: event-catalog
+  labels:
+    app: event-catalog
 spec:
   selector:
     app: event-catalog
   ports:
-  - protocol: TCP
+  - name: http
+    protocol: TCP
     port: 5000
     targetPort: 5000

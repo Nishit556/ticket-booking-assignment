@@ -23,12 +23,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-service
+  name: frontend
+  labels:
+    app: frontend
 spec:
   type: LoadBalancer # This gives us the Public URL
   selector:
     app: frontend
   ports:
-  - protocol: TCP
+  - name: http
+    protocol: TCP
     port: 80
     targetPort: 3000

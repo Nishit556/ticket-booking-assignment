@@ -3,8 +3,14 @@ import json
 import time
 from flask import Flask, request, jsonify
 from kafka import KafkaProducer
+from prometheus_flask_exporter import PrometheusMetrics
 
 app = Flask(__name__)
+
+# Initialize Prometheus Metrics
+metrics = PrometheusMetrics(app)
+# Add default metrics
+metrics.info('booking_service_info', 'Booking Service Information', version='1.0.0')
 
 # Get Kafka Broker URL from Environment Variable (Set by Kubernetes later)
 # Defaulting to localhost for local testing, but K8s will overwrite this.

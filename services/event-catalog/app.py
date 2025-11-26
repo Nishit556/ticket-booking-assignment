@@ -1,8 +1,14 @@
 import os
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from prometheus_flask_exporter import PrometheusMetrics
 
 app = Flask(__name__)
+
+# Initialize Prometheus Metrics
+metrics = PrometheusMetrics(app)
+# Add default metrics
+metrics.info('event_catalog_info', 'Event Catalog Service Information', version='1.0.0')
 
 # --- DATABASE CONFIGURATION ---
 # We check if we are in AWS by looking for the DB_HOST environment variable.

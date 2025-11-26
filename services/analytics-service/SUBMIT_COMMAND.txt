@@ -1,0 +1,11 @@
+# If PowerShell scripts aren't working, copy/paste this command directly:
+
+# 1. Upload job file
+gsutil cp analytics_job.py gs://YOUR_GCP_PROJECT_ID-flink-jobs/flink-jobs/analytics_job.py
+
+# 2. Submit job (single line - copy everything)
+gcloud dataproc jobs submit pyspark gs://YOUR_GCP_PROJECT_ID-flink-jobs/flink-jobs/analytics_job.py --cluster=flink-analytics-cluster --region=us-central1 --project=YOUR_GCP_PROJECT_ID --properties=spark.pyspark.python=python3 -- --kafka-brokers=b-1.ticketbookingkafka.8jdhzt.c8.kafka.us-east-1.amazonaws.com:9092,b-2.ticketbookingkafka.8jdhzt.c8.kafka.us-east-1.amazonaws.com:9092
+
+# 3. Check status
+gcloud dataproc jobs list --cluster=flink-analytics-cluster --region=us-central1 --project=YOUR_GCP_PROJECT_ID
+

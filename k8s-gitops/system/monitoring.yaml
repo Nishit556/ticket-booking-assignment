@@ -13,6 +13,52 @@ spec:
       parameters:
       - name: grafana.service.type
         value: LoadBalancer # Exposes Grafana Dashboard via a Public URL
+      - name: prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues
+        value: "false"
+      - name: prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues
+        value: "false"
+      - name: prometheus.prometheusSpec.ruleSelectorNilUsesHelmValues
+        value: "false"
+      values: |
+        prometheus:
+          enabled: true
+          prometheusSpec:
+            serviceMonitorSelector:
+              matchLabels:
+                release: monitoring-stack
+            serviceMonitorNamespaceSelector:
+              matchNames:
+              - default
+              - monitoring
+            podMonitorSelector:
+              matchLabels:
+                release: monitoring-stack
+            podMonitorNamespaceSelector:
+              matchNames:
+              - default
+              - monitoring
+        grafana:
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+              - name: Prometheus
+                type: prometheus
+                uid: prometheus
+                access: proxy
+                isDefault: true
+                url: http://monitoring-stack-kube-prom-prometheus.monitoring:9090
+                editable: false
+                jsonData:
+                  httpMethod: GET
+              - name: Loki
+                type: loki
+                uid: loki
+                access: proxy
+                url: http://loki-stack:3100
+                editable: false
+                jsonData:
+                  maxLines: 1000
   destination:
     server: "https://kubernetes.default.svc"
     namespace: monitoring
@@ -21,4 +67,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true # Automatically create the 'monitoring' namespace
+      - CreateNamespace=true

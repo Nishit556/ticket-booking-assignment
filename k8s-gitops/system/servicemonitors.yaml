@@ -1,0 +1,75 @@
+# ServiceMonitors for Application Services
+# These allow Prometheus to discover and scrape metrics from our services
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: booking-service-monitor
+  namespace: default  # Must be in same namespace as the service
+  labels:
+    app: booking-service
+    release: monitoring-stack
+spec:
+  selector:
+    matchLabels:
+      app: booking-service
+  endpoints:
+  - port: http  # Named port
+    interval: 30s
+    path: /metrics  # Standard Prometheus metrics endpoint
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: user-service-monitor
+  namespace: default  # Must be in same namespace as the service
+  labels:
+    app: user-service
+    release: monitoring-stack
+spec:
+  selector:
+    matchLabels:
+      app: user-service
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /metrics
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: event-catalog-monitor
+  namespace: default  # Must be in same namespace as the service
+  labels:
+    app: event-catalog
+    release: monitoring-stack
+spec:
+  selector:
+    matchLabels:
+      app: event-catalog
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /metrics
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: frontend-monitor
+  namespace: default  # Must be in same namespace as the service
+  labels:
+    app: frontend
+    release: monitoring-stack
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /metrics
+

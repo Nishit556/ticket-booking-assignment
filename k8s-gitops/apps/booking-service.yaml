@@ -19,22 +19,25 @@ spec:
         env:
         # Connects to the MSK Cluster we built in Terraform
         - name: KAFKA_BROKERS
-          value: "b-1.ticketbookingkafka.u5orzl.c8.kafka.us-east-1.amazonaws.com:9092,b-2.ticketbookingkafka.u5orzl.c8.kafka.us-east-1.amazonaws.com:9092"
+          value: "b-1.ticketbookingkafka.o4jsuy.c8.kafka.us-east-1.amazonaws.com:9092,b-2.ticketbookingkafka.o4jsuy.c8.kafka.us-east-1.amazonaws.com:9092"
         resources:
           limits:
-            cpu: "500m"
-          requests:
             cpu: "200m"
+          requests:
+            cpu: "50m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: booking-service
+  labels:
+    app: booking-service
 spec:
   selector:
     app: booking-service
   ports:
-  - protocol: TCP
+  - name: http
+    protocol: TCP
     port: 5000
     targetPort: 5000
 ---
@@ -56,4 +59,4 @@ spec:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 50
+        averageUtilization: 20

@@ -1,2 +1,6 @@
-apache-flink==1.17.0
+# NOTE: For GCP Dataproc, Flink is pre-installed
+# These are only needed for local development/testing
+# Dataproc 2.1 comes with Flink 1.15.x
+
+apache-flink==1.15.4
 kafka-python==2.0.2

@@ -49,7 +49,7 @@ const USER_SERVICE_URL = process.env.USER_SERVICE_URL || 'http://user-service:30
 // S3 Configuration (For Ticket Generator)
 // We pick up credentials automatically from the EKS Node Role
 const s3Client = new S3Client({ region: "us-east-1" });
-const BUCKET_NAME = "ticket-booking-raw-data-0d78d5e3";
+const BUCKET_NAME = "ticket-booking-raw-data-fe3dc9b6";
 const DEMO_FILE_PATH = path.join(__dirname, '..', '..', 'id_proof.txt');
 
 // --- API ROUTES ---
