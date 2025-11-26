@@ -6,9 +6,53 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/Nishit556/ticket-booking-assignment.git
-    targetRevision: HEAD
-    path: k8s-gitops/system
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 45.7.1
+    helm:
+      parameters:
+        - name: grafana.service.type
+          value: LoadBalancer
+        - name: prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues
+          value: "false"
+        - name: prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues
+          value: "false"
+        - name: prometheus.prometheusSpec.ruleSelectorNilUsesHelmValues
+          value: "false"
+      values: |
+        prometheus:
+          enabled: true
+          prometheusSpec:
+            serviceMonitorSelector:
+              matchLabels:
+                release: monitoring-stack
+            serviceMonitorNamespaceSelector: {}
+            podMonitorSelector:
+              matchLabels:
+                release: monitoring-stack
+            podMonitorNamespaceSelector: {}
+        grafana:
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+                - name: Prometheus
+                  type: prometheus
+                  uid: prometheus
+                  access: proxy
+                  isDefault: true
+                  url: http://monitoring-stack-kube-prom-prometheus.monitoring:9090
+                  editable: false
+                  jsonData:
+                    httpMethod: GET
+                - name: Loki
+                  type: loki
+                  uid: loki
+                  access: proxy
+                  url: http://loki-stack:3100
+                  editable: false
+                  jsonData:
+                    maxLines: 1000
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
@@ -18,3 +62,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

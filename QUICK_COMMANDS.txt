@@ -1,0 +1,20 @@
+# Quick Reference: Correct Demo Commands
+# ======================================
+
+# IMPORTANT: The cluster zone is us-central1-f (NOT us-central1-c)
+
+# Command 1: Show Flink job running
+gcloud compute ssh flink-analytics-cluster-m --zone=us-central1-f --project=YOUR_GCP_PROJECT_ID --command="yarn application -list"
+
+# Command 2: Show GCP cluster status  
+gcloud dataproc clusters describe flink-analytics-cluster --region=us-central1 --project=YOUR_GCP_PROJECT_ID
+
+# Command 3: Show real data in Kafka
+# (First ensure pod exists: kubectl run kafka-consumer-test --image=confluentinc/cp-kafka:7.5.0 --restart=Never --namespace=default --command -- sh -c "tail -f /dev/null")
+kubectl exec kafka-consumer-test -n default -- kafka-console-consumer --bootstrap-server "b-1.ticketbookingkafka.bo30jr.c8.kafka.us-east-1.amazonaws.com:9092" --topic ticket-bookings --from-beginning --max-messages 5
+
+# ======================================
+# Or just run the script:
+# .\CORRECT_DEMO_COMMANDS.ps1
+# ======================================
+

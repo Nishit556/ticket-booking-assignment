@@ -1,0 +1,70 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki-stack
+    targetRevision: 2.9.11
+    helm:
+      parameters:
+        - name: grafana.enabled
+          value: "false"
+        - name: loki.enabled
+          value: "true"
+        - name: loki.datasource.uid
+          value: "loki"
+        - name: promtail.enabled
+          value: "true"
+        - name: promtail.config.clients[0].url
+          value: "http://loki-stack:3100/loki/api/v1/push"
+      values: |
+        loki:
+          config:
+            auth_enabled: false
+            server:
+              http_listen_port: 3100
+            ingester:
+              lifecycler:
+                ring:
+                  kvstore:
+                    store: inmemory
+                  replication_factor: 1
+            schema_config:
+              configs:
+                - from: 2020-10-24
+                  store: boltdb-shipper
+                  object_store: filesystem
+                  schema: v11
+                  index:
+                    prefix: index_
+                    period: 24h
+            storage_config:
+              boltdb_shipper:
+                active_index_directory: /data/loki/boltdb-shipper-active
+                cache_location: /data/loki/boltdb-shipper-cache
+                cache_ttl: 24h
+                shared_store: filesystem
+              filesystem:
+                directory: /data/loki/chunks
+        promtail:
+          config:
+            snippets:
+              pipelineStages:
+                - docker: {}
+                - drop:
+                    source: "namespace"
+                    expression: "kube-system|kube-public"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+

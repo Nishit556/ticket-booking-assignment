@@ -1,88 +1,12 @@
-# Centralized Logging Stack using Grafana Loki
-# This satisfies Assignment Requirement (g): Centralized logging solution
-
----
-# Loki Stack Deployment (includes Loki, Promtail, and Grafana integration)
-apiVersion: argoproj.io/v1alpha1
-kind: Application
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: loki-stack
-  namespace: argocd
-spec:
-  project: default
-  source:
-    chart: loki-stack
-    repoURL: https://grafana.github.io/helm-charts
-    targetRevision: 2.9.11
-    helm:
-      parameters:
-      - name: loki.enabled
-        value: "true"
-      - name: loki.isDefault
-        value: "false"
-      - name: loki.datasource.uid
-        value: "loki"
-      - name: loki.datasource.jsonData
-        value: '{"maxLines":1000}'
-      - name: promtail.enabled
-        value: "true"
-      - name: grafana.enabled
-        value: "false"  # We already have Grafana from monitoring-stack
-      - name: loki.persistence.enabled
-        value: "false"
-      - name: loki.persistence.size
-        value: "10Gi"
-      - name: promtail.config.clients[0].url
-        value: "http://loki:3100/loki/api/v1/push"
-      values: |
-        loki:
-          config:
-            auth_enabled: false
-            server:
-              http_listen_port: 3100
-            ingester:
-              lifecycler:
-                ring:
-                  kvstore:
-                    store: inmemory
-                  replication_factor: 1
-            schema_config:
-              configs:
-              - from: 2020-10-24
-                store: boltdb-shipper
-                object_store: filesystem
-                schema: v11
-                index:
-                  prefix: index_
-                  period: 24h
-            storage_config:
-              boltdb_shipper:
-                active_index_directory: /data/loki/boltdb-shipper-active
-                cache_location: /data/loki/boltdb-shipper-cache
-                cache_ttl: 24h
-                shared_store: filesystem
-              filesystem:
-                directory: /data/loki/chunks
-        promtail:
-          config:
-            snippets:
-              pipelineStages:
-                - docker: {}
-                - drop:
-                    source: "namespace"
-                    expression: "kube-system|kube-public"
-  destination:
-    server: "https://kubernetes.default.svc"
-    namespace: monitoring
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-
----
-# NOTE: Loki datasource is now merged into monitoring-stack-kube-prom-grafana-datasource
-# This prevents "Only one datasource per organization can be marked as default" errors
-# The Loki datasource is automatically added to Grafana via the merged ConfigMap
+  name: loki-stack-notes
+  namespace: monitoring
+  annotations:
+    note: "Actual Loki deployment is managed by loki-app.yaml (ArgoCD Application)."
+data:
+  README: |
+    This placeholder keeps the system directory intact.
+    Loki & Promtail are deployed via loki-app.yaml (Helm chart).
 

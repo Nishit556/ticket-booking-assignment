@@ -37,3 +37,18 @@ output "msk_brokers" {
   # Matches 'resource "aws_msk_cluster" "kafka"' in kafka.tf
   value       = aws_msk_cluster.kafka.bootstrap_brokers
 }
+
+output "msk_cluster_arn" {
+  description = "MSK Cluster ARN"
+  value       = aws_msk_cluster.kafka.arn
+}
+
+output "msk_security_group_id" {
+  description = "Security Group ID for MSK Kafka cluster"
+  value       = aws_security_group.kafka_sg.id
+}
+
+output "vpc_id" {
+  description = "VPC ID where resources are deployed"
+  value       = module.vpc.vpc_id
+}

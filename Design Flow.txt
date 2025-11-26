@@ -1,0 +1,1472 @@
+# Complete Flow Analysis: Ticket Booking System
+## Control Flow, Data Flow, and Execution Flow
+
+---
+
+## 📋 Table of Contents
+
+1. [System Overview](#1-system-overview)
+2. [Control Flow](#2-control-flow)
+3. [Data Flow](#3-data-flow)
+4. [Execution Flow](#4-execution-flow)
+5. [Component Verification](#5-component-verification)
+6. [Live Demo Guide](#6-live-demo-guide)
+7. [Viva Preparation](#7-viva-preparation)
+
+---
+
+## 1. System Overview
+
+### 1.1 Architecture Summary
+
+**Multi-Cloud Microservices Architecture:**
+- **Primary Cloud (AWS):** EKS cluster hosting 4 microservices + Lambda + MSK + RDS + DynamoDB + S3
+- **Secondary Cloud (GCP):** Dataproc cluster running Apache Flink for stream analytics
+- **Total Services:** 6 microservices (Frontend, User Service, Booking Service, Event Catalog, Ticket Generator Lambda, Analytics Service)
+
+### 1.2 Technology Stack
+
+| Component | Technology | Location |
+|-----------|-----------|----------|
+| Container Orchestration | Kubernetes (EKS) | AWS |
+| Frontend | Node.js/Express | AWS EKS |
+| User Service | Node.js/Express | AWS EKS |
+| Booking Service | Python/Flask | AWS EKS |
+| Event Catalog | Python/Flask | AWS EKS |
+| Ticket Generator | Python | AWS Lambda |
+| Analytics | Apache Flink (PyFlink) | GCP Dataproc |
+| Message Queue | Kafka (MSK) | AWS |
+| SQL Database | PostgreSQL (RDS) | AWS |
+| NoSQL Database | DynamoDB | AWS |
+| Object Storage | S3 | AWS |
+| Monitoring | Prometheus + Grafana | AWS EKS |
+| Logging | Loki + Promtail | AWS EKS |
+| Load Testing | k6 | Local/CI |
+
+---
+
+## 2. Control Flow
+
+### 2.1 User Registration Flow
+
+```
+┌─────────┐
+│ Browser │
+└────┬────┘
+     │ 1. POST /api/users/register
+     │    {name, email}
+     ▼
+┌─────────────────────┐
+│  Frontend Service   │ (Node.js/Express)
+│  Port: 3000         │
+│  LoadBalancer: 80   │
+└────┬────────────────┘
+     │ 2. Proxy: POST http://user-service:3000/users
+     │    {name, email}
+     ▼
+┌─────────────────────┐
+│   User Service       │ (Node.js/Express)
+│   Port: 3000        │
+│   HPA: 2-10 pods    │
+└────┬────────────────┘
+     │ 3. AWS SDK: DynamoDB.putItem()
+     │    Table: ticket-booking-users
+     ▼
+┌─────────────────────┐
+│     DynamoDB         │ (AWS Managed)
+│     Primary Key:     │
+│     userId (String)  │
+└────┬────────────────┘
+     │ 4. Return: {user_id, name, email, createdAt}
+     │    (Reverse path back to browser)
+     ▼
+┌─────────┐
+│ Browser │ ← Displays User ID
+└─────────┘
+```
+
+**Control Points:**
+- Frontend validates input format
+- User Service generates unique `userId` (UUID)
+- DynamoDB ensures no duplicate keys
+- HPA scales User Service based on CPU (7% threshold)
+
+**Example Request:**
+```bash
+POST http://<LOADBALANCER_URL>/api/users/register
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+```
+
+**Example Response:**
+```json
+{
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "createdAt": "2025-11-23T10:30:00Z"
+}
+```
+
+---
+
+### 2.2 Event Browsing Flow
+
+```
+┌─────────┐
+│ Browser │
+└────┬────┘
+     │ 1. GET /api/events
+     ▼
+┌─────────────────────┐
+│  Frontend Service   │
+└────┬────────────────┘
+     │ 2. Proxy: GET http://event-catalog:5000/events
+     ▼
+┌─────────────────────┐
+│  Event Catalog      │ (Python/Flask)
+│  Port: 5000        │
+│  Replicas: 2        │
+└────┬────────────────┘
+     │ 3. SQLAlchemy: SELECT * FROM event
+     │    Connection: PostgreSQL
+     ▼
+┌─────────────────────┐
+│   RDS PostgreSQL    │ (AWS Managed)
+│   Database: ticketdb│
+│   Table: event      │
+└────┬────────────────┘
+     │ 4. Return: [{event_id, name, date, venue, tickets_available}, ...]
+     │    (Reverse path back to browser)
+     ▼
+┌─────────┐
+│ Browser │ ← Displays Events List
+└─────────┘
+```
+
+**Control Points:**
+- Event Catalog seeds initial data on first deployment
+- Connection pooling via SQLAlchemy
+- 2 replicas for high availability (no HPA - low traffic service)
+
+**Example Response:**
+```json
+[
+  {
+    "event_id": "1",
+    "name": "Summer Music Festival",
+    "date": "2025-12-15",
+    "venue": "Central Park",
+    "tickets_available": 500
+  },
+  {
+    "event_id": "2",
+    "name": "Tech Conference 2025",
+    "date": "2025-12-20",
+    "venue": "Convention Center",
+    "tickets_available": 200
+  }
+]
+```
+
+---
+
+### 2.3 Ticket Booking Flow (Event-Driven)
+
+```
+┌─────────┐
+│ Browser │
+└────┬────┘
+     │ 1. POST /api/bookings/book
+     │    {user_id, event_id, ticket_count}
+     ▼
+┌─────────────────────┐
+│  Frontend Service   │
+└────┬────────────────┘
+     │ 2. Proxy: POST http://booking-service:5000/book
+     ▼
+┌─────────────────────┐
+│  Booking Service    │ (Python/Flask)
+│  Port: 5000        │
+│  HPA: 2-10 pods    │
+└────┬────────────────┘
+     │ 3. Validate: user_id, event_id, ticket_count
+     │ 4. Create booking event:
+     │    {
+     │      "event_id": "...",
+     │      "user_id": "...",
+     │      "ticket_count": 2,
+     │      "timestamp": 1700736000.0
+     │    }
+     │ 5. KafkaProducer.send("ticket-bookings", event)
+     ▼
+┌─────────────────────┐
+│   AWS MSK Kafka     │ (AWS Managed)
+│   Topic:            │
+│   ticket-bookings   │
+└────┬────────────────┘
+     │ 6. Event stored in Kafka partition
+     │    (Asynchronous - returns immediately)
+     ▼
+┌─────────────────────┐
+│  Booking Service    │
+└────┬────────────────┘
+     │ 7. Return: {"message": "Booking request received!", "status": "queued"}
+     │    (Reverse path back to browser)
+     ▼
+┌─────────┐
+│ Browser │ ← Shows "Booking Queued" (202 Accepted)
+└─────────┘
+
+     │ (Parallel Processing)
+     ▼
+┌─────────────────────┐
+│  Analytics Service  │ (Apache Flink on GCP Dataproc)
+│  Consumes from:      │
+│  ticket-bookings     │
+└────┬────────────────┘
+     │ 8. Flink: Tumbling Window (1 minute)
+     │    - Groups by event_id
+     │    - Sums ticket_count per window
+     │    - Stateful aggregation
+     │ 9. Flink: Publishes to "analytics-results"
+     ▼
+┌─────────────────────┐
+│   AWS MSK Kafka     │
+│   Topic:            │
+│   analytics-results │
+└─────────────────────┘
+```
+
+**Control Points:**
+- Booking Service validates input before publishing
+- Kafka ensures message durability
+- Flink processes events in 1-minute windows
+- HPA scales Booking Service based on CPU (20% threshold)
+
+**Example Request:**
+```bash
+POST http://<LOADBALANCER_URL>/api/bookings/book
+Content-Type: application/json
+
+{
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "event_id": "1",
+  "ticket_count": 2
+}
+```
+
+**Example Response:**
+```json
+{
+  "message": "Booking request received!",
+  "status": "queued"
+}
+```
+
+**Kafka Message Format:**
+```json
+{
+  "event_id": "1",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "ticket_count": 2,
+  "timestamp": 1700736000.0
+}
+```
+
+**Analytics Result Format:**
+```json
+{
+  "event_id": "1",
+  "window_end": "2025-11-23T10:31:00.000Z",
+  "total_tickets": 15
+}
+```
+
+---
+
+### 2.4 Ticket Generation Flow (Serverless)
+
+```
+┌─────────┐
+│ Browser │
+└────┬────┘
+     │ 1. POST /api/demo-upload (or /api/upload with file)
+     │    File: id_proof.txt (or uploaded file)
+     ▼
+┌─────────────────────┐
+│  Frontend Service   │
+└────┬────────────────┘
+     │ 2. Read file from disk (demo) or multer temp storage
+     │ 3. AWS SDK: S3.putObject()
+     │    Bucket: ticket-booking-raw-data-XXXXX
+     │    Key: uploads/demo_1700736000.txt
+     ▼
+┌─────────────────────┐
+│      AWS S3          │ (AWS Managed)
+│      Bucket:         │
+│      ticket-booking- │
+│      raw-data-XXXXX  │
+└────┬────────────────┘
+     │ 4. S3 Event: s3:ObjectCreated:*
+     │    (Excludes tickets/ prefix to prevent loops)
+     │ 5. S3 → Lambda: Invoke asynchronously
+     ▼
+┌─────────────────────┐
+│  Lambda Function    │ (Python 3.9)
+│  ticket-generator-  │
+│  func               │
+└────┬────────────────┘
+     │ 6. Lambda handler receives S3 event
+     │ 7. Download file from S3
+     │ 8. Validate file size (< 5MB)
+     │ 9. Generate ticket receipt:
+     │    - Read file content
+     │    - Create ticket text
+     │    - Format: "TICKET RECEIPT\n..."
+     │ 10. AWS SDK: S3.putObject()
+     │     Bucket: same bucket
+     │     Key: tickets/{original_filename}_TICKET.txt
+     ▼
+┌─────────────────────┐
+│      AWS S3          │
+│      tickets/        │
+│      folder          │
+└────┬────────────────┘
+     │ 11. Lambda logs to CloudWatch
+     │     (Reverse path - no direct response to browser)
+     ▼
+┌─────────┐
+│ Browser │ ← Polls /api/tickets to see new ticket
+└─────────┘
+     │ 12. GET /api/tickets
+     │     Frontend → S3.listObjectsV2(Prefix: "tickets/")
+     │     Returns: [{key, lastModified}, ...]
+```
+
+**Control Points:**
+- S3 event filter prevents infinite loops (excludes `tickets/`)
+- Lambda timeout: 10 seconds
+- File size validation: max 5MB
+- Frontend polls `/api/tickets` to show generated tickets
+
+**Example S3 Event (Lambda receives):**
+```json
+{
+  "Records": [
+    {
+      "s3": {
+        "bucket": {"name": "ticket-booking-raw-data-XXXXX"},
+        "object": {"key": "uploads/demo_1700736000.txt"}
+      }
+    }
+  ]
+}
+```
+
+**Example Generated Ticket (S3):**
+```
+TICKET RECEIPT
+═══════════════════════════════════════
+Booking ID: 550e8400-e29b-41d4-a716-446655440000
+Event: Summer Music Festival
+Date: 2025-12-15
+Venue: Central Park
+Tickets: 2
+Status: CONFIRMED
+Generated: 2025-11-23T10:30:00Z
+═══════════════════════════════════════
+```
+
+---
+
+### 2.5 Monitoring & Observability Flow
+
+```
+┌─────────────────────┐
+│  All Services       │
+│  (Frontend, User,   │
+│   Booking, Event)   │
+└────┬────────────────┘
+     │ 1. Expose /metrics endpoint
+     │    - Prometheus client libraries
+     │    - HTTP request metrics
+     │    - Custom business metrics
+     ▼
+┌─────────────────────┐
+│  Prometheus         │ (Scraping)
+│  Scrape Interval:   │
+│  30 seconds         │
+└────┬────────────────┘
+     │ 2. ServiceMonitor CRD discovers services
+     │ 3. Scrapes /metrics from each service
+     │ 4. Stores time-series data
+     ▼
+┌─────────────────────┐
+│  Grafana            │ (Visualization)
+│  LoadBalancer: 80   │
+└────┬────────────────┘
+     │ 5. Queries Prometheus via PromQL
+     │ 6. Displays dashboards:
+     │    - Kubernetes cluster health
+     │    - Service metrics (RPS, latency, errors)
+     │    - HPA scaling events
+     │    - Pod resource usage
+     ▼
+┌─────────┐
+│ Browser │ ← Access Grafana dashboard
+└─────────┘
+
+     │ (Parallel: Logging)
+     ▼
+┌─────────────────────┐
+│  All Pods           │
+│  (stdout/stderr)    │
+└────┬────────────────┘
+     │ 7. Kubernetes collects logs
+     ▼
+┌─────────────────────┐
+│  Promtail           │ (DaemonSet)
+│  Runs on each node  │
+└────┬────────────────┘
+     │ 8. Collects logs from all pods
+     │ 9. Labels logs with:
+     │    - namespace
+     │    - app label
+     │    - pod name
+     │ 10. Sends to Loki
+     ▼
+┌─────────────────────┐
+│  Loki               │ (StatefulSet)
+│  Log aggregation    │
+└────┬────────────────┘
+     │ 11. Stores logs (indexed by labels)
+     │ 12. Grafana queries Loki via LogQL
+     │     Example: {namespace="default", app="booking-service"} |= "error"
+     ▼
+┌─────────────────────┐
+│  Grafana Explore    │
+└────┬────────────────┘
+     │ 13. Displays logs in real-time
+     ▼
+┌─────────┐
+│ Browser │ ← View logs in Grafana
+└─────────┘
+```
+
+**Control Points:**
+- Prometheus scrapes every 30 seconds
+- ServiceMonitors auto-discover services with labels
+- Promtail runs as DaemonSet (one per node)
+- Loki indexes by labels (not full-text) for efficiency
+
+---
+
+### 2.6 Auto-Scaling Flow (HPA)
+
+```
+┌─────────────────────┐
+│  Load Test (k6)     │
+│  or Real Traffic    │
+└────┬────────────────┘
+     │ 1. Generates HTTP requests
+     │    - 10 → 50 → 100 → 150 users
+     ▼
+┌─────────────────────┐
+│  Booking Service    │
+│  Pods: 2 (initial)  │
+└────┬────────────────┘
+     │ 2. CPU utilization increases
+     │    - Target: 20% CPU
+     │    - Current: 45% CPU (exceeds threshold)
+     ▼
+┌─────────────────────┐
+│  Metrics Server     │ (Kubernetes)
+│  Collects pod CPU   │
+└────┬────────────────┘
+     │ 3. HPA Controller (every 15 seconds)
+     │    - Queries Metrics Server
+     │    - Calculates: desired_replicas = ceil(current_cpu / target_cpu * current_replicas)
+     │    - Example: ceil(45% / 20% * 2) = ceil(4.5) = 5 pods
+     ▼
+┌─────────────────────┐
+│  HPA                │
+│  booking-hpa        │
+└────┬────────────────┘
+     │ 4. Updates Deployment spec.replicas
+     │    - Min: 2, Max: 10
+     │    - Current: 2 → 5 → 8 → 10 (as load increases)
+     ▼
+┌─────────────────────┐
+│  Kubernetes         │
+│  Deployment         │
+│  Controller         │
+└────┬────────────────┘
+     │ 5. Creates new pods
+     │    - Pods start in Pending → ContainerCreating → Running
+     │    - Readiness probe must pass
+     │    - Service endpoints updated
+     ▼
+┌─────────────────────┐
+│  Booking Service    │
+│  Pods: 10 (scaled)   │
+└────┬────────────────┘
+     │ 6. Load distributed across pods
+     │    - CPU per pod decreases
+     │    - HPA scales down when CPU < 20%
+     │    - Cooldown period prevents thrashing
+```
+
+**Control Points:**
+- HPA checks every 15 seconds
+- Scale-up: immediate (no cooldown)
+- Scale-down: 5-minute cooldown (prevents thrashing)
+- Metrics Server must be installed for HPA to work
+
+**Example HPA Status:**
+```bash
+$ kubectl get hpa booking-hpa
+
+NAME          REFERENCE                TARGETS   MINPODS   MAXPODS   REPLICAS   AGE
+booking-hpa   Deployment/booking-service   45%/20%   2         10        5         5m
+```
+
+---
+
+## 3. Data Flow
+
+### 3.1 Data Storage Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DATA STORAGE LAYER                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│  │   DynamoDB   │  │  RDS Postgres │  │      S3        │   │
+│  │  (NoSQL)     │  │  (SQL)        │  │  (Object)     │   │
+│  ├──────────────┤  ├──────────────┤  ├──────────────┤   │
+│  │ Table:       │  │ Database:    │  │ Bucket:       │   │
+│  │ ticket-      │  │ ticketdb     │  │ ticket-      │   │
+│  │ booking-     │  │              │  │ booking-     │   │
+│  │ users        │  │ Table: event │  │ raw-data-    │   │
+│  │              │  │              │  │ XXXXX        │   │
+│  ├──────────────┤  ├──────────────┤  ├──────────────┤   │
+│  │ Schema:      │  │ Schema:      │  │ Structure:   │   │
+│  │ - userId (PK)│  │ - id (PK)    │  │ - uploads/  │   │
+│  │ - name       │  │ - name      │  │ - tickets/  │   │
+│  │ - email      │  │ - date      │  │              │   │
+│  │ - createdAt  │  │ - venue     │  │              │   │
+│  │              │  │ - tickets_  │  │              │   │
+│  │              │  │   available │  │              │   │
+│  └──────────────┘  └──────────────┘  └──────────────┘   │
+│         ▲                  ▲                  ▲          │
+│         │                  │                  │          │
+│         │                  │                  │          │
+│  ┌──────┴──────┐    ┌──────┴──────┐    ┌──────┴──────┐   │
+│  │User Service │    │Event Catalog│    │Frontend +  │   │
+│  │             │    │             │    │Lambda      │   │
+│  └─────────────┘    └─────────────┘    └────────────┘   │
+│                                                           │
+└───────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                    STREAMING DATA LAYER                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │           AWS MSK (Kafka Cluster)                    │   │
+│  ├─────────────────────────────────────────────────────┤   │
+│  │                                                     │   │
+│  │  Topic: ticket-bookings (Source)                   │   │
+│  │  ├── Partition 0                                   │   │
+│  │  ├── Partition 1                                   │   │
+│  │  └── Messages:                                      │   │
+│  │      {event_id, user_id, ticket_count, timestamp}  │   │
+│  │                                                     │   │
+│  │  Topic: analytics-results (Sink)                   │   │
+│  │  ├── Partition 0                                   │   │
+│  │  └── Messages:                                      │   │
+│  │      {event_id, window_end, total_tickets}         │   │
+│  │                                                     │   │
+│  └─────────────────────────────────────────────────────┘   │
+│         ▲                              │                    │
+│         │                              │                    │
+│         │                              ▼                    │
+│  ┌──────┴──────┐              ┌─────────────────┐         │
+│  │Booking      │              │Analytics Service│         │
+│  │Service      │              │(Flink on GCP)   │         │
+│  │(Producer)   │              │(Consumer +      │         │
+│  │             │              │ Producer)       │         │
+│  └─────────────┘              └─────────────────┘         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 Data Flow Examples
+
+#### Example 1: User Registration Data Flow
+
+```
+Input (Browser):
+{
+  "name": "Alice Smith",
+  "email": "alice@example.com"
+}
+
+↓ (Frontend Service)
+
+↓ (User Service)
+
+↓ (DynamoDB PutItem)
+
+Stored in DynamoDB:
+{
+  "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "Alice Smith",
+  "email": "alice@example.com",
+  "createdAt": "2025-11-23T10:30:00.000Z"
+}
+
+↓ (Response back to browser)
+
+Output (Browser):
+{
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "Alice Smith",
+  "email": "alice@example.com",
+  "createdAt": "2025-11-23T10:30:00.000Z"
+}
+```
+
+#### Example 2: Booking Event Data Flow
+
+```
+Input (Browser):
+{
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "event_id": "1",
+  "ticket_count": 3
+}
+
+↓ (Frontend Service)
+
+↓ (Booking Service)
+
+↓ (Kafka Producer)
+
+Stored in Kafka (ticket-bookings topic):
+{
+  "event_id": "1",
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "ticket_count": 3,
+  "timestamp": 1700736000.0
+}
+
+↓ (Flink consumes)
+
+↓ (Flink processes: 1-minute window)
+
+↓ (Flink aggregates)
+
+Published to Kafka (analytics-results topic):
+{
+  "event_id": "1",
+  "window_end": "2025-11-23T10:31:00.000Z",
+  "total_tickets": 25  // Sum of all tickets in this window
+}
+```
+
+#### Example 3: Ticket Generation Data Flow
+
+```
+Input (Browser):
+File: id_proof.txt (content: "User ID: a1b2c3d4...")
+
+↓ (Frontend Service)
+
+↓ (S3 PutObject)
+
+Stored in S3:
+Bucket: ticket-booking-raw-data-XXXXX
+Key: uploads/demo_1700736000.txt
+Content: "User ID: a1b2c3d4..."
+
+↓ (S3 Event triggers Lambda)
+
+↓ (Lambda downloads file)
+
+↓ (Lambda generates ticket)
+
+Stored in S3:
+Bucket: ticket-booking-raw-data-XXXXX
+Key: tickets/demo_1700736000_TICKET.txt
+Content:
+"TICKET RECEIPT
+═══════════════════════════════════════
+Booking ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+Event: Summer Music Festival
+Date: 2025-12-15
+Venue: Central Park
+Tickets: 3
+Status: CONFIRMED
+Generated: 2025-11-23T10:30:00Z
+═══════════════════════════════════════"
+
+↓ (Frontend polls /api/tickets)
+
+Output (Browser):
+[
+  {
+    "key": "tickets/demo_1700736000_TICKET.txt",
+    "lastModified": "2025-11-23T10:30:05.000Z"
+  }
+]
+```
+
+---
+
+## 4. Execution Flow
+
+### 4.1 System Startup Sequence
+
+```
+1. Infrastructure Provisioning (Terraform)
+   ├── AWS Infrastructure (15-20 minutes)
+   │   ├── VPC, Subnets, Security Groups
+   │   ├── EKS Cluster (2-3 nodes)
+   │   ├── MSK Kafka Cluster (2 brokers)
+   │   ├── RDS PostgreSQL Instance
+   │   ├── DynamoDB Table
+   │   ├── S3 Bucket
+   │   ├── ECR Repositories
+   │   └── Lambda Function
+   │
+   └── GCP Infrastructure (10-15 minutes)
+       ├── VPC Network, Subnets
+       ├── Dataproc Cluster (1 master + 2 workers)
+       ├── GCS Bucket
+       └── Service Accounts
+
+2. Container Image Build & Push (5-10 minutes)
+   ├── Frontend → ECR
+   ├── User Service → ECR
+   ├── Booking Service → ECR
+   └── Event Catalog → ECR
+
+3. GitOps Deployment via ArgoCD (5 minutes)
+   ├── Commit and push changes to k8s-gitops/
+   ├── kubectl apply -f argocd-app.yaml
+   ├── kubectl apply -f monitor-app.yaml
+   └── argocd app sync ticket-booking-app / monitoring-stack
+
+4. Monitoring & Logging (ArgoCD-managed)
+   ├── Prometheus + Grafana (from k8s-gitops/system/)
+   └── Loki + Promtail (same ArgoCD app)
+
+5. GCP Analytics Deployment (2-3 minutes)
+   ├── Upload analytics_job.py to GCS
+   └── Submit Flink job to Dataproc
+
+6. Verification (2 minutes)
+   ├── kubectl get pods (all Running)
+   ├── kubectl get svc (LoadBalancer URLs)
+   └── Test endpoints
+```
+
+### 4.2 Request Execution Timeline
+
+#### Synchronous Request (User Registration)
+
+```
+Time (ms)  │ Action
+───────────┼─────────────────────────────────────────────
+0          │ Browser sends POST /api/users/register
+10         │ Request reaches AWS LoadBalancer
+20         │ LoadBalancer routes to Frontend pod
+30         │ Frontend receives request
+40         │ Frontend validates JSON
+50         │ Frontend makes HTTP call to user-service:3000
+60         │ Kubernetes DNS resolves user-service
+70         │ Request reaches User Service pod
+80         │ User Service validates input
+90         │ User Service generates userId (UUID)
+100        │ User Service calls DynamoDB.putItem()
+150        │ DynamoDB writes data (50ms latency)
+200        │ DynamoDB returns success
+210        │ User Service formats response
+220        │ User Service returns to Frontend
+230        │ Frontend returns to LoadBalancer
+240        │ LoadBalancer returns to Browser
+250        │ Browser receives response
+
+Total: ~250ms
+```
+
+#### Asynchronous Request (Ticket Booking)
+
+```
+Time (ms)  │ Action
+───────────┼─────────────────────────────────────────────
+0          │ Browser sends POST /api/bookings/book
+10         │ Request reaches Frontend
+20         │ Frontend proxies to booking-service:5000
+30         │ Booking Service validates input
+40         │ Booking Service creates Kafka message
+50         │ Booking Service calls KafkaProducer.send()
+60         │ Kafka acknowledges (async, non-blocking)
+70         │ Booking Service returns 202 Accepted
+80         │ Response reaches Browser
+
+Total: ~80ms (fast response, processing continues)
+
+(Parallel Processing)
+100        │ Kafka stores message in partition
+200        │ Flink consumer reads from Kafka
+300        │ Flink processes in window
+60000      │ Flink window closes (1 minute)
+60050      │ Flink publishes to analytics-results topic
+```
+
+#### Event-Driven Request (Ticket Generation)
+
+```
+Time (ms)  │ Action
+───────────┼─────────────────────────────────────────────
+0          │ Browser sends POST /api/demo-upload
+10         │ Frontend receives file
+20         │ Frontend uploads to S3
+100        │ S3 stores file (80ms upload time)
+110        │ S3 generates ObjectCreated event
+120        │ S3 invokes Lambda (asynchronous)
+130        │ Frontend returns success (doesn't wait for Lambda)
+140        │ Response reaches Browser
+
+Total: ~140ms (fast response, Lambda runs in background)
+
+(Parallel Processing)
+200        │ Lambda receives S3 event
+300        │ Lambda downloads file from S3
+400        │ Lambda validates file
+500        │ Lambda generates ticket content
+600        │ Lambda uploads ticket to S3
+700        │ Lambda logs to CloudWatch
+800        │ Lambda execution completes
+```
+
+### 4.3 Load Test Execution Flow
+
+```
+Phase 1: Ramp-up (0-1 minute)
+├── 0 users → 10 users
+├── Light load
+└── HPA: 2 pods (no scaling yet)
+
+Phase 2: Ramp-up (1-4 minutes)
+├── 10 users → 50 users
+├── Moderate load
+└── HPA: 2 → 3-4 pods (CPU > 20%)
+
+Phase 3: Ramp-up (4-9 minutes)
+├── 50 users → 100 users
+├── High load
+└── HPA: 4 → 6-8 pods (CPU > 20%)
+
+Phase 4: Peak Load (9-12 minutes)
+├── 100 users → 150 users
+├── Maximum stress
+└── HPA: 8 → 10 pods (max reached)
+
+Phase 5: Ramp-down (12-14 minutes)
+├── 150 users → 50 users
+├── Load decreasing
+└── HPA: 10 → 8 pods (after 5min cooldown)
+
+Phase 6: Ramp-down (14-15 minutes)
+├── 50 users → 0 users
+├── Load stops
+└── HPA: 8 → 2 pods (after cooldown)
+```
+
+---
+
+## 5. Component Verification
+
+### 5.1 Infrastructure Verification
+
+#### AWS Resources
+
+```powershell
+# Verify EKS Cluster
+aws eks describe-cluster --name ticket-booking-cluster --region us-east-1
+# Expected: Status: ACTIVE
+
+# Verify MSK Cluster
+aws kafka list-clusters --region us-east-1
+# Expected: Cluster with name "ticket-booking-kafka"
+
+# Verify RDS Instance
+aws rds describe-db-instances --region us-east-1
+# Expected: DBInstanceStatus: available
+
+# Verify DynamoDB Table
+aws dynamodb describe-table --table-name ticket-booking-users --region us-east-1
+# Expected: TableStatus: ACTIVE
+
+# Verify S3 Bucket
+aws s3 ls | Select-String "ticket-booking-raw-data"
+# Expected: Bucket name listed
+
+# Verify Lambda Function
+aws lambda get-function --function-name ticket-generator-func --region us-east-1
+# Expected: State: Active
+```
+
+#### GCP Resources
+
+```powershell
+# Verify Dataproc Cluster
+gcloud dataproc clusters describe flink-analytics-cluster --region us-central1
+# Expected: Status: RUNNING
+
+# Verify GCS Bucket
+gsutil ls | Select-String "flink-jobs"
+# Expected: Bucket listed
+```
+
+### 5.2 Kubernetes Verification
+
+```powershell
+# Verify all pods are running
+kubectl get pods
+# Expected: All pods show STATUS: Running, READY: 1/1
+
+# Verify services
+kubectl get svc
+# Expected: frontend-service has EXTERNAL-IP (LoadBalancer)
+
+# Verify HPAs
+kubectl get hpa
+# Expected: booking-hpa and user-hpa show REPLICAS: 2
+
+# Verify deployments
+kubectl get deployments
+# Expected: All deployments show READY: 2/2 (or more if scaled)
+```
+
+### 5.3 Service Health Checks
+
+```powershell
+# Get Frontend URL
+$FRONTEND_URL = kubectl get svc frontend-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+# Test Frontend
+curl http://$FRONTEND_URL/health
+# Expected: "OK"
+
+# Test User Service (via Frontend)
+curl -X POST http://$FRONTEND_URL/api/users/register -H "Content-Type: application/json" -d '{"name":"Test","email":"test@example.com"}'
+# Expected: JSON with user_id
+
+# Test Event Catalog (via Frontend)
+curl http://$FRONTEND_URL/api/events
+# Expected: JSON array with events
+
+# Test Booking Service (via Frontend)
+curl -X POST http://$FRONTEND_URL/api/bookings/book -H "Content-Type: application/json" -d '{"user_id":"test","event_id":"1","ticket_count":1}'
+# Expected: {"message":"Booking request received!","status":"queued"}
+```
+
+### 5.4 Kafka Verification
+
+```powershell
+# Get MSK brokers
+$MSK_BROKERS = terraform output -raw msk_brokers
+
+# Test Kafka connection (from a pod)
+kubectl run -it --rm kafka-test --image=confluentinc/cp-kafka:latest --restart=Never -- bash
+# Inside pod:
+# kafka-topics --bootstrap-server $MSK_BROKERS --list
+# Expected: ticket-bookings, analytics-results
+
+# Consume messages (test)
+# kafka-console-consumer --bootstrap-server $MSK_BROKERS --topic ticket-bookings --from-beginning --max-messages 5
+# Expected: JSON messages with booking events
+```
+
+### 5.5 Flink Job Verification
+
+```powershell
+# List Dataproc jobs
+gcloud dataproc jobs list --cluster=flink-analytics-cluster --region=us-central1
+# Expected: Job with state: RUNNING or DONE
+
+# Check job logs
+gcloud dataproc jobs describe <JOB_ID> --cluster=flink-analytics-cluster --region=us-central1
+# Expected: DriverOutputResourceUri with logs
+
+# Access Flink UI (SSH tunnel)
+gcloud compute ssh flink-analytics-cluster-m --zone=us-central1-a --ssh-flag="-L 8081:localhost:8081"
+# Then open: http://localhost:8081
+# Expected: Flink Web UI showing running job
+```
+
+### 5.6 Monitoring Verification
+
+```powershell
+# Get Grafana URL
+$GRAFANA_URL = kubectl get svc -n monitoring monitoring-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+# Get Grafana password
+$GRAFANA_PASSWORD = kubectl get secret -n monitoring monitoring-stack-grafana -o jsonpath='{.data.admin-password}' | ForEach-Object { [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($_)) }
+
+# Access Grafana
+# Open: http://$GRAFANA_URL
+# Login: admin / $GRAFANA_PASSWORD
+# Expected: Dashboards visible, metrics showing
+
+# Check Prometheus targets
+kubectl port-forward -n monitoring svc/monitoring-stack-kube-prom-prometheus 9090:9090
+# Open: http://localhost:9090/targets
+# Expected: All targets UP (green)
+```
+
+### 5.7 Logging Verification
+
+```powershell
+# Check Loki pods
+kubectl get pods -n monitoring | Select-String "loki"
+# Expected: loki-0 (1/1 Running)
+
+# Check Promtail pods
+kubectl get pods -n monitoring | Select-String "promtail"
+# Expected: promtail-xxxxx (1/1 Running on each node)
+
+# Query logs in Grafana
+# 1. Open Grafana: http://$GRAFANA_URL
+# 2. Go to Explore (compass icon)
+# 3. Select Loki data source
+# 4. Query: {namespace="default"}
+# Expected: Logs from all services visible
+```
+
+---
+
+## 6. Live Demo Guide
+
+### 6.1 Pre-Demo Checklist
+
+```powershell
+# 1. Verify all infrastructure is running
+cd infrastructure/aws
+terraform output  # Check all outputs exist
+
+cd ../gcp
+terraform output  # Check all outputs exist
+
+# 2. Verify all pods are running
+kubectl get pods
+# All should be Running
+
+# 3. Get access URLs
+$FRONTEND_URL = kubectl get svc frontend-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+$GRAFANA_URL = kubectl get svc -n monitoring monitoring-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+Write-Host "Frontend: http://$FRONTEND_URL"
+Write-Host "Grafana: http://$GRAFANA_URL"
+
+# 4. Test all endpoints
+curl http://$FRONTEND_URL/health
+curl http://$FRONTEND_URL/api/events
+```
+
+### 6.2 Demo Script (15 minutes)
+
+#### Part 1: Architecture Overview (2 minutes)
+
+1. **Show Infrastructure:**
+   ```powershell
+   # AWS Resources
+   aws eks list-clusters
+   aws kafka list-clusters
+   aws rds describe-db-instances
+   
+   # GCP Resources
+   gcloud dataproc clusters list
+   ```
+
+2. **Show Kubernetes Services:**
+   ```powershell
+   kubectl get all
+   kubectl get hpa
+   ```
+
+#### Part 2: User Registration (1 minute)
+
+1. Open Frontend URL in browser
+2. Register a new user:
+   - Name: "Demo User"
+   - Email: "demo@example.com"
+3. Show User ID returned
+4. **Explain:** "User data is stored in DynamoDB via User Service"
+
+#### Part 3: Event Browsing (1 minute)
+
+1. Events should auto-load
+2. Show 3 sample events
+3. **Explain:** "Events are stored in RDS PostgreSQL via Event Catalog Service"
+
+#### Part 4: Ticket Booking (2 minutes)
+
+1. Click "Book Now" on an event
+2. Show booking appears in "Booking History"
+3. **Explain:** 
+   - "Booking Service publishes event to Kafka"
+   - "This is asynchronous - we get immediate response"
+   - "Analytics Service on GCP processes this in real-time"
+
+#### Part 5: Ticket Generation (2 minutes)
+
+1. Click "Demo Ticket" button
+2. Wait 5-10 seconds
+3. Refresh "Generated Tickets" panel
+4. Show ticket file appears
+5. **Explain:**
+   - "File uploaded to S3"
+   - "S3 triggers Lambda function"
+   - "Lambda generates ticket and stores in S3 tickets/ folder"
+
+#### Part 6: Monitoring Dashboard (3 minutes)
+
+1. Open Grafana URL
+2. Show dashboards:
+   - Kubernetes / Compute Resources / Pod
+   - Service metrics
+   - HPA status
+3. **Explain:**
+   - "Prometheus scrapes metrics from all services"
+   - "Grafana visualizes the data"
+   - "We can see CPU, memory, request rates"
+
+#### Part 7: Centralized Logging (2 minutes)
+
+1. In Grafana, go to Explore
+2. Select Loki data source
+3. Query: `{namespace="default", app="booking-service"}`
+4. Show logs from Booking Service
+5. **Explain:**
+   - "Promtail collects logs from all pods"
+   - "Loki aggregates and indexes logs"
+   - "We can query logs using LogQL"
+
+#### Part 8: Load Testing & Auto-Scaling (4 minutes)
+
+1. **Start Load Test:**
+   ```powershell
+   cd load-testing
+   .\run-load-test.ps1
+   ```
+
+2. **In another terminal, watch HPA:**
+   ```powershell
+   kubectl get hpa --watch
+   ```
+
+3. **In Grafana, show:**
+   - Pod count increasing
+   - CPU utilization
+   - Request rate
+
+4. **Explain:**
+   - "k6 generates load (10 → 150 users)"
+   - "HPA detects CPU > 20%"
+   - "Pods scale from 2 → 10"
+   - "After load decreases, pods scale back down"
+
+### 6.3 Demo Troubleshooting
+
+**If Frontend is not accessible:**
+```powershell
+# Check LoadBalancer
+kubectl get svc frontend-service
+# Wait 2-3 minutes for LoadBalancer to provision
+
+# Check pods
+kubectl get pods -l app=frontend
+kubectl logs -l app=frontend --tail=50
+```
+
+**If services are not responding:**
+```powershell
+# Check service endpoints
+kubectl get endpoints
+
+# Test from inside cluster
+kubectl run -it --rm debug --image=busybox --restart=Never -- sh
+# Inside pod: wget -O- http://user-service:3000/health
+```
+
+**If HPA is not scaling:**
+```powershell
+# Check Metrics Server
+kubectl get deployment metrics-server -n kube-system
+
+# Check HPA status
+kubectl describe hpa booking-hpa
+
+# Check pod CPU
+kubectl top pods
+```
+
+---
+
+## 7. Viva Preparation
+
+### 7.1 Key Concepts to Explain
+
+#### 1. Microservices Architecture
+
+**Question:** "Why did you choose microservices?"
+
+**Answer:**
+- **Scalability:** Each service can scale independently based on load (e.g., Booking Service scales more than Event Catalog)
+- **Technology Diversity:** Use best tool for each service (Node.js for frontend, Python for data processing)
+- **Fault Isolation:** Failure in one service doesn't cascade to others
+- **Team Autonomy:** Different teams can own and deploy services independently
+- **Deployment Flexibility:** Deploy services independently without affecting others
+
+#### 2. Multi-Cloud Strategy
+
+**Question:** "Why use both AWS and GCP?"
+
+**Answer:**
+- **Assignment Requirement:** Analytics service must run on different cloud provider
+- **Best-of-Breed:** Leverage best services from each provider
+  - AWS: EKS (mature Kubernetes), MSK (managed Kafka), RDS (proven databases)
+  - GCP: Dataproc (excellent for Flink/Hadoop workloads)
+- **Vendor Diversity:** Reduces lock-in risk
+- **Cost Optimization:** Use most cost-effective service for each workload
+
+#### 3. Event-Driven Architecture
+
+**Question:** "Why use Kafka instead of REST for booking?"
+
+**Answer:**
+- **Decoupling:** Booking Service doesn't need to wait for analytics processing
+- **Scalability:** Kafka handles high throughput (millions of events/second)
+- **Durability:** Messages are persisted, can replay if needed
+- **Multiple Consumers:** Analytics Service can process without blocking booking
+- **Resilience:** If analytics is down, bookings still work (messages queued)
+
+#### 4. Database Choices
+
+**Question:** "Why DynamoDB for users and PostgreSQL for events?"
+
+**Answer:**
+- **DynamoDB (Users):**
+  - Simple key-value access (user lookup by ID)
+  - High throughput requirements
+  - Low latency (single-digit milliseconds)
+  - Serverless (pay-per-request)
+  - No complex queries needed
+
+- **PostgreSQL (Events):**
+  - Structured relational data
+  - ACID compliance for inventory management
+  - Complex queries (filtering, sorting)
+  - Data integrity requirements
+  - SQL familiarity
+
+#### 5. Auto-Scaling (HPA)
+
+**Question:** "How does HPA work?"
+
+**Answer:**
+- **Metrics Collection:** Metrics Server collects CPU/memory from pods
+- **HPA Controller:** Checks every 15 seconds
+- **Scaling Decision:** Calculates desired replicas based on target CPU
+  - Formula: `desired = ceil(current_cpu / target_cpu * current_replicas)`
+- **Scaling Actions:**
+  - Scale-up: Immediate (no cooldown)
+  - Scale-down: 5-minute cooldown (prevents thrashing)
+- **Constraints:** Min replicas (2) and max replicas (10)
+
+#### 6. Stream Processing (Flink)
+
+**Question:** "Why Flink for analytics?"
+
+**Answer:**
+- **Assignment Requirement:** Real-time stream processing with stateful, time-windowed aggregation
+- **Stateful Processing:** Maintains state for window aggregations
+- **Low Latency:** Sub-second processing latency
+- **Exactly-Once Semantics:** Guaranteed processing semantics
+- **Rich Windows:** Built-in support for tumbling, sliding, session windows
+- **Our Implementation:** 1-minute tumbling windows, aggregates ticket counts per event
+
+#### 7. Serverless (Lambda)
+
+**Question:** "Why Lambda for ticket generation?"
+
+**Answer:**
+- **Event-Driven:** Perfect fit for S3-triggered processing
+- **Cost Efficiency:** Pay only when files are uploaded (not always-on)
+- **Automatic Scaling:** Handles traffic spikes without configuration
+- **No Infrastructure:** No servers to manage or patch
+- **Fast Deployment:** Simple code deployment process
+
+#### 8. Observability Stack
+
+**Question:** "How does monitoring work?"
+
+**Answer:**
+- **Metrics (Prometheus):**
+  - Pulls metrics from services every 30 seconds
+  - ServiceMonitors auto-discover services
+  - Stores time-series data
+  - Queryable via PromQL
+
+- **Visualization (Grafana):**
+  - Queries Prometheus via PromQL
+  - Displays dashboards
+  - Shows: CPU, memory, request rates, latency, errors
+
+- **Logging (Loki + Promtail):**
+  - Promtail (DaemonSet) collects logs from all pods
+  - Loki aggregates and indexes logs by labels
+  - Queryable via LogQL (Prometheus-compatible)
+  - Integrated with Grafana Explore
+
+#### 9. Infrastructure as Code
+
+**Question:** "Why Terraform?"
+
+**Answer:**
+- **Reproducibility:** Same infrastructure every time
+- **Version Control:** Infrastructure changes tracked in Git
+- **Idempotency:** Safe to run multiple times
+- **Multi-Cloud:** Single tool for AWS and GCP
+- **State Management:** Tracks resource state
+- **Modularity:** Reusable modules
+
+#### 10. GitOps (ArgoCD)
+
+**Question:** "What is GitOps?"
+
+**Answer:**
+- **Definition:** Infrastructure and application deployments managed via Git
+- **ArgoCD:** GitOps controller for Kubernetes
+- **Workflow:**
+  1. Developer commits changes to Git
+  2. ArgoCD detects changes (polling or webhook)
+  3. ArgoCD syncs changes to Kubernetes cluster
+  4. Kubernetes applies new manifests
+- **Benefits:**
+  - Declarative: Desired state in Git
+  - Auditable: All changes tracked
+  - Rollback: Easy via Git revert
+  - Automation: Automatic sync
+
+### 7.2 Common Questions & Answers
+
+**Q: What happens if Kafka goes down?**
+A: Booking Service will fail to publish messages, but the service itself remains healthy. Bookings will fail with 500 error. Kafka is highly available (2 brokers), so single broker failure doesn't affect service.
+
+**Q: How do you handle database connections?**
+A: 
+- RDS: SQLAlchemy connection pooling (default pool size)
+- DynamoDB: AWS SDK handles connection pooling automatically
+- Both use security groups to restrict access to EKS nodes only
+
+**Q: What about security?**
+A:
+- Network: VPC isolation, security groups restrict traffic
+- IAM: EKS nodes have IAM roles, IRSA for pod-level permissions
+- Secrets: Currently environment variables (production would use Kubernetes Secrets or AWS Secrets Manager)
+- Encryption: S3 encryption at rest, RDS encryption enabled
+
+**Q: How do you test the system?**
+A:
+- Unit tests: Service-level tests (not shown in assignment)
+- Integration tests: End-to-end API tests
+- Load tests: k6 validates HPA scaling and system resilience
+- Monitoring: Prometheus/Grafana for real-time health
+
+**Q: What are the costs?**
+A:
+- AWS: ~$50-100/month (EKS, MSK, RDS, S3, Lambda)
+- GCP: ~$30-50/month (Dataproc cluster running)
+- Total: ~$80-150/month (destroy when not in use)
+
+**Q: How do you handle failures?**
+A:
+- Health checks: Liveness and readiness probes
+- Auto-restart: Kubernetes restarts failed pods
+- Auto-scaling: HPA adds pods if load increases
+- Circuit breakers: (Future improvement)
+- Retries: Kafka producer retries on failure
+
+**Q: What are the limitations?**
+A:
+- Single region deployment (not multi-region)
+- No caching layer (Redis)
+- No API Gateway (direct service calls)
+- Secrets in environment variables (not secure)
+- MSK security: PLAINTEXT (not TLS)
+- No CI/CD pipeline (manual deployment)
+
+### 7.3 Technical Deep Dives
+
+#### Kafka Message Flow
+
+```
+Producer (Booking Service)
+  ↓
+Kafka Broker (MSK)
+  ├── Partition 0 (Leader)
+  └── Partition 1 (Replica)
+  ↓
+Consumer (Flink)
+  ├── Consumer Group: flink-analytics-group
+  ├── Offset tracking
+  └── Exactly-once processing
+```
+
+#### Flink Window Aggregation
+
+```python
+# Tumbling Window (1 minute)
+TUMBLE(proc_time, INTERVAL '1' MINUTE)
+
+# Aggregation
+GROUP BY event_id, TUMBLE(...)
+SUM(ticket_count) as total_tickets
+
+# Output
+{
+  event_id: "1",
+  window_end: "2025-11-23T10:31:00.000Z",
+  total_tickets: 25
+}
+```
+
+#### HPA Scaling Calculation
+
+```
+Current CPU: 45%
+Target CPU: 20%
+Current Replicas: 2
+
+Desired Replicas = ceil(45% / 20% * 2)
+                 = ceil(4.5)
+                 = 5 pods
+
+HPA creates 3 new pods
+```
+
+---
+
+## 8. Quick Reference Commands

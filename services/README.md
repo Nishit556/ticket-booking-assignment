@@ -55,8 +55,10 @@ Requirement **(d)** forbids `kubectl apply` for application workloads. All deplo
 
 2. **Ensure ArgoCD applications exist**
    ```powershell
-   kubectl apply -f argocd-app.yaml      # ticket-booking workloads
-   kubectl apply -f monitor-app.yaml     # monitoring + logging stack
+   kubectl apply -f argocd-app.yaml                    # ticket-booking workloads
+   kubectl apply -f monitor-app.yaml                   # Prometheus + Grafana
+   kubectl apply -f loki-app.yaml                      # Loki + Promtail
+   kubectl apply -f monitoring-servicemonitors-app.yaml # custom ServiceMonitors
    ```
 
 3. **Trigger/monitor sync**
