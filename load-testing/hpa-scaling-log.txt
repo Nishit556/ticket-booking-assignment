@@ -1,21 +1,6 @@
-﻿HPA Scaling Log - 11/23/2025 22:39:46
-2025-11-23 22:40:01 | Booking: 2 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:40:17 | Booking: 2 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:40:33 | Booking: 2 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:40:49 | Booking: 2 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:41:06 | Booking: 2 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:41:22 | Booking: 2 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:41:38 | Booking: 2 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:41:55 | Booking: 2 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:42:11 | Booking: 3 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:42:28 | Booking: 3 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:42:44 | Booking: 4 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:43:01 | Booking: 4 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:43:24 | Booking: 4 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:43:47 | Booking: 4 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:44:11 | Booking: 5 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:44:34 | Booking: 5 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:44:56 | Booking: 5 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:45:20 | Booking: 5 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:45:43 | Booking: 5 | User: 8 | Event: 2 | Frontend: 2
-2025-11-23 22:46:02 | Booking: 6 | User: 8 | Event: 2 | Frontend: 2
+﻿HPA Scaling Log - 11/26/2025 16:36:20
+2025-11-26 16:36:33 | Booking: 3 | User: 2 | Event: 2 | Frontend: 2
+2025-11-26 16:36:50 | Booking: 3 | User: 2 | Event: 2 | Frontend: 2
+2025-11-26 16:37:06 | Booking: 3 | User: 2 | Event: 2 | Frontend: 2
+2025-11-26 16:37:29 | Booking: 3 | User: 2 | Event: 2 | Frontend: 2
+2025-11-26 16:37:53 | Booking: 3 | User: 2 | Event: 2 | Frontend: 2
