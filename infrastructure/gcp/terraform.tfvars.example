@@ -1,0 +1,14 @@
+# Copy this file to terraform.tfvars and fill in your values
+
+gcp_project_id = "your-gcp-project-id"
+gcp_region     = "us-central1"
+gcp_zone       = "us-central1-a"
+
+# Get this from AWS MSK output
+aws_msk_brokers = "b-1.ticketbookingkafka.8jdhzt.c8.kafka.us-east-1.amazonaws.com:9092,b-2.ticketbookingkafka.8jdhzt.c8.kafka.us-east-1.amazonaws.com:9092"
+
+# Optional: Adjust cluster configuration
+dataproc_cluster_name = "flink-analytics-cluster"
+dataproc_machine_type = "n1-standard-2"
+dataproc_num_workers  = 2
+
