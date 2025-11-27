@@ -57,7 +57,9 @@ def log_processing(kafka_brokers):
 
     # 4. The Logic: Tumbling Window Aggregation (1 Minute)
     # "Count tickets per event every 1 minute"
-    t_env.execute_sql("""
+    print("Executing Flink job...")
+    # Execute the INSERT statement - this starts the streaming job
+    table_result = t_env.execute_sql("""
         INSERT INTO results
         SELECT 
             event_id,
@@ -68,6 +70,12 @@ def log_processing(kafka_brokers):
             event_id,
             TUMBLE(proc_time, INTERVAL '1' MINUTE)
     """)
+    
+    print("Flink job is running. Processing events in real-time...")
+    print("Job will continue running until cancelled.")
+    # For streaming jobs, wait() blocks and keeps the job running
+    # This is necessary for the job to continue processing
+    table_result.wait()
 
 if __name__ == '__main__':
     # Parse command-line arguments

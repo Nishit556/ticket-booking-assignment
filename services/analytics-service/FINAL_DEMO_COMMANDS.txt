@@ -1,0 +1,39 @@
+# FINAL DEMO COMMANDS - Copy and Paste These
+
+# ========================================
+# Command 1: Show Flink Job Running
+# ========================================
+gcloud compute ssh flink-analytics-cluster-m --zone=us-central1-f --command="yarn application -list"
+
+# What to say:
+# "This shows our Flink analytics job running on the Dataproc cluster. 
+# You can see it's in RUNNING state, processing events from Kafka in real-time."
+
+# ========================================
+# Command 2: Show GCP Cluster Status
+# ========================================
+gcloud dataproc clusters describe flink-analytics-cluster --region=us-central1
+
+# What to say:
+# "This shows our Dataproc cluster configuration. It's running in GCP's us-central1 region 
+# with 1 master node and 2 worker nodes. The cluster is healthy and operational. 
+# Notice it's in GCP while our Kafka is in AWS - this demonstrates cross-cloud architecture."
+
+# ========================================
+# Command 3: Show Real Data in Kafka
+# ========================================
+kubectl exec kafka-consumer-test -n default -- kafka-console-consumer --bootstrap-server "b-1.ticketbookingkafka.o4jsuy.c8.kafka.us-east-1.amazonaws.com:9092" --topic ticket-bookings --from-beginning --max-messages 5
+
+# What to say:
+# "Here we see actual booking events flowing through Kafka. These are real events 
+# published by our booking service when users make reservations. Our Flink job consumes 
+# these events and performs time-windowed aggregations."
+
+# ========================================
+# IMPORTANT NOTES:
+# ========================================
+# 1. Zone is: us-central1-f (NOT us-central1-c)
+# 2. Kafka broker: b-1.ticketbookingkafka.o4jsuy.c8.kafka.us-east-1.amazonaws.com:9092
+# 3. Make sure kafka-consumer-test pod exists before demo
+# 4. Job ID: f42c3901957e3c664540129c625ecf96 (already submitted and running)
+
