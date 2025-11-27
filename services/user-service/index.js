@@ -103,3 +103,8 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`User Service running on port ${PORT}`);
 });
+
+const HEARTBEAT_MS = Number(process.env.HEARTBEAT_MS || 60000);
+setInterval(() => {
+  console.log(`[heartbeat] user-service healthy @ ${new Date().toISOString()}`);
+}, HEARTBEAT_MS);

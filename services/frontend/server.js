@@ -183,3 +183,8 @@ const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Frontend Proxy running on port ${PORT}`);
 });
+
+const HEARTBEAT_MS = Number(process.env.HEARTBEAT_MS || 60000);
+setInterval(() => {
+  console.log(`[heartbeat] frontend proxy healthy @ ${new Date().toISOString()}`);
+}, HEARTBEAT_MS);

@@ -1,9 +1,13 @@
 import os
 import json
 import time
+import logging
+import threading
 from flask import Flask, request, jsonify
 from kafka import KafkaProducer
 from prometheus_flask_exporter import PrometheusMetrics
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 app = Flask(__name__)
 
@@ -52,6 +56,7 @@ def book_ticket():
         "ticket_count": data.get('ticket_count', 1),
         "timestamp": time.time()
     }
+    logging.info("Booking request received: %s", booking_event)
 
     # Send to Kafka
     kp = get_kafka_producer()
@@ -60,6 +65,17 @@ def book_ticket():
         return jsonify({"message": "Booking request received!", "status": "queued"}), 202
     else:
         return jsonify({"error": "Booking system currently unavailable (Kafka Error)"}), 500
+
+
+def _heartbeat_loop():
+    """Continuously emit a lightweight heartbeat log so Loki always has data."""
+    interval = int(os.environ.get("HEARTBEAT_SECONDS", "60"))
+    while True:
+        logging.info("[heartbeat] booking-service alive | kafka=%s", KAFKA_BROKERS)
+        time.sleep(interval)
+
+
+threading.Thread(target=_heartbeat_loop, daemon=True).start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
