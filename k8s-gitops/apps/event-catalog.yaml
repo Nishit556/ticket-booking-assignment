@@ -20,9 +20,15 @@ spec:
         env:
         # We will get this Hostname from Terraform Outputs later
         - name: DB_HOST
-          value: "terraform-20251126034838499800000014.cov0iwq0wygo.us-east-1.rds.amazonaws.com"
+          valueFrom:
+            configMapKeyRef:
+              name: db-config
+              key: host
         - name: DB_PASSWORD
-          value: "CHANGE_ME_PASSWORD" 
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password 
 ---
 apiVersion: v1
 kind: Service

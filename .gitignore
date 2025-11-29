@@ -2,7 +2,21 @@
 .terraform/
 *.tfstate
 *.tfstate.backup
+*.tfstate.*
 *.tfvars
+!terraform.tfvars.example
+
+# Credentials and Secrets
+*.pem
+*.key
+*.env
+.env*
+credentials.json
+*.json
+!package.json
+!package-lock.json
+secrets/
+**/secrets/
 
 # Python
 __pycache__/

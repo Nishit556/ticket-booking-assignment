@@ -32,7 +32,7 @@ resource "aws_db_instance" "default" {
   engine_version       = "16.3"
   instance_class       = "db.t3.micro" # Cheapest option
   username             = "dbadmin"
-  password             = "CHANGE_ME_PASSWORD" # In real life, use Secrets Manager!
+  password = var.db_password  # Use variable from terraform.tfvars
   parameter_group_name = "default.postgres16"
   skip_final_snapshot  = true # Faster destruction for assignments
   publicly_accessible  = false
