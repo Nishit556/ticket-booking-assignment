@@ -29,3 +29,12 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentation (keep only FINAL_SETUP.md and README.md)
+*.md
+!README.md
+!FINAL_SETUP.md
+!readme/README.md
+!services/README.md
+!load-testing/README.md
+!infrastructure/gcp/README.md
